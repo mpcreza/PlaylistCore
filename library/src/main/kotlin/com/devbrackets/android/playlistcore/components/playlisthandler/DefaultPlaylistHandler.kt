@@ -47,14 +47,14 @@ import com.devbrackets.android.playlistcore.util.SafeWifiLock
 open class DefaultPlaylistHandler<I : PlaylistItem, out M : BasePlaylistManager<I>> protected constructor(
         protected val context: Context,
         protected val serviceClass: Class<out Service>,
-        protected val playlistManager: M,
+        protected val playlistManager: M?,
         protected val imageProvider: ImageProvider<I>,
         protected val notificationProvider: PlaylistNotificationProvider,
         protected val mediaSessionProvider: MediaSessionProvider,
         protected val mediaControlsProvider: MediaControlsProvider,
         protected val audioFocusProvider: AudioFocusProvider<I>,
         var listener: Listener<I>?
-) : PlaylistHandler<I>(playlistManager.mediaPlayers), ProgressListener, MediaStatusListener<I> {
+) : PlaylistHandler<I>(playlistManager?.mediaPlayers ?: emptyList()), ProgressListener, MediaStatusListener<I> {
 
     companion object {
         const val TAG = "DefaultPlaylistHandler"
@@ -114,14 +114,14 @@ open class DefaultPlaylistHandler<I : PlaylistItem, out M : BasePlaylistManager<
         this.serviceCallbacks = serviceCallbacks
 
         mediaProgressPoll.progressListener = this
-        playlistManager.playlistHandler = this
+        playlistManager?.playlistHandler = this
     }
 
     override fun tearDown() {
         setPlaybackState(PlaybackState.STOPPED)
 
         relaxResources()
-        playlistManager.playlistHandler = null
+        playlistManager?.playlistHandler = null
 
         mediaInfo.clear()
     }
@@ -165,23 +165,23 @@ open class DefaultPlaylistHandler<I : PlaylistItem, out M : BasePlaylistManager<
 
         setPlaybackState(PlaybackState.STOPPED)
         currentPlaylistItem?.let {
-            playlistManager.playbackStatusListener?.onItemPlaybackEnded(it)
+            playlistManager?.playbackStatusListener?.onItemPlaybackEnded(it)
         }
 
         // let go of all resources
         relaxResources()
 
-        playlistManager.reset()
+        playlistManager?.reset()
         serviceCallbacks.stop()
     }
 
     override fun next() {
-        playlistManager.next()
+        playlistManager?.next()
         startItemPlayback(0, !isPlaying)
     }
 
     override fun previous() {
-        playlistManager.previous()
+        playlistManager?.previous()
         startItemPlayback(0, !isPlaying)
     }
 
@@ -248,7 +248,7 @@ open class DefaultPlaylistHandler<I : PlaylistItem, out M : BasePlaylistManager<
      */
     override fun onProgressUpdated(mediaProgress: MediaProgress): Boolean {
         currentMediaProgress = mediaProgress
-        return playlistManager.onProgressUpdated(mediaProgress)
+        return playlistManager?.onProgressUpdated(mediaProgress) ?: false
     }
 
     protected open fun setupForeground() {
@@ -288,8 +288,8 @@ open class DefaultPlaylistHandler<I : PlaylistItem, out M : BasePlaylistManager<
         // Generate the notification state
         mediaInfo.mediaState.isPlaying = isPlaying
         mediaInfo.mediaState.isLoading = isLoading
-        mediaInfo.mediaState.isNextEnabled = playlistManager.isNextAvailable
-        mediaInfo.mediaState.isPreviousEnabled = playlistManager.isPreviousAvailable
+        mediaInfo.mediaState.isNextEnabled = playlistManager?.isNextAvailable ?: false
+        mediaInfo.mediaState.isPreviousEnabled = playlistManager?.isPreviousAvailable ?: false
 
         // Updates the notification information
         mediaInfo.notificationId = notificationId
@@ -381,7 +381,7 @@ open class DefaultPlaylistHandler<I : PlaylistItem, out M : BasePlaylistManager<
         this.seekToPosition = positionMillis
         this.startPaused = startPaused
 
-        playlistManager.playbackStatusListener?.onItemPlaybackEnded(currentPlaylistItem)
+        playlistManager?.playbackStatusListener?.onItemPlaybackEnded(currentPlaylistItem)
         currentPlaylistItem = getNextPlayableItem()
 
         currentPlaylistItem.let {
@@ -394,7 +394,7 @@ open class DefaultPlaylistHandler<I : PlaylistItem, out M : BasePlaylistManager<
         }
 
         //If the playback wasn't handled, attempt to seek to the next playable item, otherwise stop the service
-        if (playlistManager.isNextAvailable) {
+        if (playlistManager?.isNextAvailable ?: false) {
             next()
         } else {
             stop()
@@ -463,7 +463,7 @@ open class DefaultPlaylistHandler<I : PlaylistItem, out M : BasePlaylistManager<
         if (!mediaPlayer.isPlaying && !startPaused) {
             pausedForSeek = seekRequested
             play()
-            playlistManager.playbackStatusListener?.onMediaPlaybackStarted(currentPlaylistItem!!, mediaPlayer.currentPosition, mediaPlayer.duration)
+            playlistManager?.playbackStatusListener?.onMediaPlaybackStarted(currentPlaylistItem!!, mediaPlayer.currentPosition, mediaPlayer.duration)
         } else {
             setPlaybackState(PlaybackState.PAUSED)
         }
@@ -477,14 +477,14 @@ open class DefaultPlaylistHandler<I : PlaylistItem, out M : BasePlaylistManager<
      * it will be the next downloaded item.
      */
     protected open fun getNextPlayableItem(): I? {
-        var item = playlistManager.currentItem
+        var item = playlistManager?.currentItem
         while (item != null && getMediaPlayerForItem(item) == null) {
             listener?.onItemSkipped(item)
-            item = playlistManager.next()
+            item = playlistManager?.next()
         }
 
         //If we are unable to get a next playable item, inform the listener we are at the end of the playlist
-        item ?: playlistManager.playbackStatusListener?.onPlaylistEnded()
+        item ?: playlistManager?.playbackStatusListener?.onPlaylistEnded()
         return item
     }
 
@@ -494,9 +494,9 @@ open class DefaultPlaylistHandler<I : PlaylistItem, out M : BasePlaylistManager<
      */
     protected open fun mediaItemChanged(item: I?) {
         //Validates that the currentPlaylistItem is for the currentItem
-        if (!playlistManager.isPlayingItem(item)) {
+        if (!playlistManager?.isPlayingItem(item)!!) {
             Log.d(TAG, "forcing currentPlaylistItem update")
-            currentPlaylistItem = playlistManager.currentItem
+            currentPlaylistItem = playlistManager?.currentItem
         }
 
         item?.let {
@@ -515,7 +515,7 @@ open class DefaultPlaylistHandler<I : PlaylistItem, out M : BasePlaylistManager<
      */
     protected open fun setPlaybackState(state: PlaybackState) {
         currentPlaybackState = state
-        playlistManager.onPlaybackStateChanged(state)
+        playlistManager?.onPlaybackStateChanged(state)
 
         // Makes sure the Media Controls are up-to-date
         if (state != PlaybackState.STOPPED && state != PlaybackState.ERROR) {
